@@ -1,12 +1,28 @@
 import { mkdir, writeFile } from 'fs/promises';
 import { join } from 'path';
-import type { WorkflowRunRequest, SSEEvent, StepName, Prompt } from '$lib/types';
+import type { WorkflowRunRequest, SSEEvent, StepName, Prompt, WorkflowConfig } from '$lib/types';
 import { readPrompts } from './readPrompts';
 import { generateImage } from './textToImage';
 import { splitImageGrid } from './splitGrid';
 import { removeBackground } from './removeBackground';
 import { convertToSvg } from './pngToSvg';
 import { bundleToEps } from './bundleEps';
+
+export const pendingSteps = new Map<string, () => void>();
+
+async function pauseIfManual(
+	promptId: number,
+	stepName: StepName,
+	config: WorkflowConfig,
+	onEvent: (event: SSEEvent) => void
+): Promise<void> {
+	if (config.workflowMode === 'manual') {
+		emit(onEvent, 'step:paused', promptId, stepName, { pausedAt: Date.now() });
+		await new Promise<void>((resolve) => {
+			pendingSteps.set(`${promptId}:${stepName}`, resolve);
+		});
+	}
+}
 
 /**
  * Emit a typed SSE event through the provided callback.
@@ -54,6 +70,7 @@ export async function runPipeline(
 	request: WorkflowRunRequest,
 	onEvent: (event: SSEEvent) => void
 ): Promise<void> {
+	pendingSteps.clear();
 	const { config } = request;
 
 	// --- Step 0: parse prompts ---------------------------------------------------
@@ -100,6 +117,8 @@ export async function runPipeline(
 				outputFile: generatedPath
 			});
 
+			await pauseIfManual(prompt.id, 'textToImage', config, onEvent);
+
 			// ---- 2. Split Grid --------------------------------------------------
 			emit(onEvent, 'step:start', prompt.id, 'splitGrid', {});
 
@@ -119,6 +138,8 @@ export async function runPipeline(
 				cellCount: cells.length,
 				outputFiles: splitPaths
 			});
+
+			await pauseIfManual(prompt.id, 'splitGrid', config, onEvent);
 
 			// ---- 3. Remove Background -------------------------------------------
 			emit(onEvent, 'step:start', prompt.id, 'removeBackground', {});
@@ -148,6 +169,8 @@ export async function runPipeline(
 				outputFiles: noBgPaths
 			});
 
+			await pauseIfManual(prompt.id, 'removeBackground', config, onEvent);
+
 			// ---- 4. PNG → SVG ---------------------------------------------------
 			emit(onEvent, 'step:start', prompt.id, 'pngToSvg', {});
 
@@ -175,6 +198,8 @@ export async function runPipeline(
 				elapsedMs: svgMs,
 				outputFiles: svgPaths
 			});
+
+			await pauseIfManual(prompt.id, 'pngToSvg', config, onEvent);
 
 			// ---- 5. Bundle EPS --------------------------------------------------
 			emit(onEvent, 'step:start', prompt.id, 'bundleEps', {});

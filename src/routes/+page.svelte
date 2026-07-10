@@ -72,6 +72,44 @@
 	});
 
 	let progress = $state<PipelineProgress | null>(null);
+	let pausedStep = $state<StepName | null>(null);
+	let pausedPromptId = $state<number | null>(null);
+
+	const NEXT_STEPS: Record<StepName, string> = {
+		readPrompts: 'Generate Grid',
+		textToImage: 'Split 3×3 Grid',
+		splitGrid: 'Remove Background',
+		removeBackground: 'Convert PNG to SVG',
+		pngToSvg: 'Bundle EPS',
+		bundleEps: 'Finished'
+	};
+
+	async function handleNextStep() {
+		if (!pausedStep || !pausedPromptId) return;
+
+		const stepToResolve = pausedStep;
+		const promptToResolve = pausedPromptId;
+
+		pausedStep = null;
+		pausedPromptId = null;
+
+		try {
+			addLog(`▶ Resuming pipeline: running next step...`, 'info');
+			const response = await fetch('/api/workflow/next', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ promptId: promptToResolve, stepName: stepToResolve })
+			});
+
+			if (!response.ok) {
+				const body = await response.json();
+				throw new Error(body.error || 'Failed to resume step');
+			}
+		} catch (err) {
+			const msg = err instanceof Error ? err.message : String(err);
+			addLog(`❌ Failed to resume: ${msg}`, 'error');
+		}
+	}
 	const unsubProgress = pipelineProgress.subscribe((p) => {
 		progress = p;
 		if (p && p.prompts && p.prompts.length > 0) {
@@ -154,6 +192,8 @@
 
 		abortController = new AbortController();
 		logs = []; // Clear old logs
+		pausedStep = null;
+		pausedPromptId = null;
 		activeTab = 'logs';
 		addLog('🚀 Initializing Asset Template Pipeline...', 'info');
 
@@ -374,6 +414,12 @@
 					}
 					break;
 				}
+				case 'step:paused': {
+					pausedStep = event.stepName!;
+					pausedPromptId = event.promptId!;
+					addLog(`⏸️ Pipeline paused after completing ${STEP_LABELS[pausedStep]}. Click "Next Step" to run ${NEXT_STEPS[pausedStep]}...`, 'info');
+					break;
+				}
 			}
 
 			updated.prompts = prompts;
@@ -382,6 +428,8 @@
 	}
 
 	function handleStop() {
+		pausedStep = null;
+		pausedPromptId = null;
 		if (abortController) {
 			abortController.abort();
 			abortController = null;
@@ -414,7 +462,7 @@
 		</div>
 
 		<!-- Top Execution Actions -->
-		<div class="toolbar-left">
+		<div class="toolbar-left" style="display: flex; gap: 8px; align-items: center;">
 			<button
 				class="btn btn-primary run-btn"
 				disabled={running || currentPromptCount === 0}
@@ -428,6 +476,17 @@
 					<span>Run Pipeline</span>
 				{/if}
 			</button>
+
+			{#if pausedStep}
+				<button
+					class="btn pulse-btn"
+					onclick={handleNextStep}
+					style="background: #2ed573; border-color: #2ed573; color: #fff; animation: pulse 1.5s infinite; font-weight: 700; display: flex; align-items: center; gap: 6px;"
+				>
+					<span class="btn-icon">⏭</span>
+					<span>Next: {NEXT_STEPS[pausedStep]}</span>
+				</button>
+			{/if}
 
 			{#if running}
 				<button class="btn btn-danger" onclick={handleStop}>
@@ -556,6 +615,30 @@
 									value={config.baseUrl}
 									oninput={(e) => updateConfigField('baseUrl', (e.target as HTMLInputElement).value)}
 								/>
+							</div>
+							<div class="input-group">
+								<span class="input-label">Workflow Mode</span>
+								<select
+									value={config.workflowMode || 'auto'}
+									onchange={(e) => updateConfigField('workflowMode', (e.target as HTMLSelectElement).value as 'auto' | 'manual')}
+									style="width: 100%; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-sm); color: var(--color-text); padding: var(--space-2) var(--space-3); font-size: var(--text-xs); outline: none;"
+								>
+									<option value="auto">Automatic (Run all steps sequentially)</option>
+									<option value="manual">Manual (Pause after each step, require "Next")</option>
+								</select>
+							</div>
+							<div class="input-group">
+								<span class="input-label">Default System Prompt</span>
+								<textarea
+									value={config.systemPrompt || ''}
+									oninput={(e) => updateConfigField('systemPrompt', (e.target as HTMLTextAreaElement).value)}
+									placeholder="System prompt template..."
+									rows="5"
+									style="width: 100%; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-sm); color: var(--color-text); padding: var(--space-2) var(--space-3); font-size: 0.65rem; outline: none; resize: vertical; font-family: var(--font-mono); line-height: 1.4;"
+								></textarea>
+								<span style="font-size: 0.6rem; color: var(--color-text-muted); margin-top: -2px;">
+									Use <code>[PROMPT]</code> as the placeholder for your text.
+								</span>
 							</div>
 						</div>
 					{/if}
@@ -972,5 +1055,17 @@
 		transform: scale(2.2);
 		z-index: 50;
 		filter: drop-shadow(0 12px 24px rgba(0, 0, 0, 0.18));
+	}
+
+	@keyframes pulse {
+		0% {
+			box-shadow: 0 0 0 0 rgba(46, 213, 115, 0.5);
+		}
+		70% {
+			box-shadow: 0 0 0 8px rgba(46, 213, 115, 0);
+		}
+		100% {
+			box-shadow: 0 0 0 0 rgba(46, 213, 115, 0);
+		}
 	}
 </style>

@@ -10,7 +10,7 @@ export async function generateImage(
 	prompt: string,
 	config: WorkflowConfig
 ): Promise<Buffer> {
-	const fullPrompt = SYSTEM_PROMPT.replace('[PROMPT]', prompt);
+	const fullPrompt = (config.systemPrompt || SYSTEM_PROMPT).replace('[PROMPT]', prompt);
 	const url = `${config.baseUrl}/image/${encodeURIComponent(fullPrompt)}?model=${encodeURIComponent(config.model)}&width=${config.resolution.width}&height=${config.resolution.height}`;
 
 	const maxAttempts = 3;

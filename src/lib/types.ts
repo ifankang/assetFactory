@@ -17,6 +17,8 @@ export interface WorkflowConfig {
 	gridSize: { rows: number; cols: number };
 	outputFolder: string;
 	vectorizerEngine?: 'vtracer' | 'potrace';
+	systemPrompt?: string;
+	workflowMode?: 'auto' | 'manual';
 }
 
 /** Status of a single pipeline step */
@@ -74,7 +76,8 @@ export type SSEEventType =
 	| 'step:start'
 	| 'step:progress'
 	| 'step:complete'
-	| 'step:error';
+	| 'step:error'
+	| 'step:paused';
 
 /** SSE event data */
 export interface SSEEvent {

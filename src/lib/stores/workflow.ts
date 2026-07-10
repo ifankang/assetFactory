@@ -17,7 +17,9 @@ const getStoredConfig = (): WorkflowConfig => {
 		resolution: { width: 1024, height: 1024 },
 		gridSize: { rows: 3, cols: 3 },
 		outputFolder: './output',
-		vectorizerEngine: 'vtracer'
+		vectorizerEngine: 'vtracer',
+		systemPrompt: 'consistent 3x3 grid of 9 modern flat vector icons, category: [PROMPT], soft-duotone SaaS style, rounded geometric shapes, medium dark-navy outlines, soft periwinkle primary, pale tints, white background, grounding shadow, clean SVG outline, no text, no borders, no labels',
+		workflowMode: 'auto'
 	};
 
 	if (!isBrowser) return defaultCfg;
