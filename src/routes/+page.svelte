@@ -547,7 +547,7 @@
 						<div class="accordion-content">
 							<span class="input-label">Enter Prompts (one per line)</span>
 							<textarea
-								rows="5"
+								rows="8"
 								value={currentPromptsText}
 								oninput={handleTextareaChange}
 								placeholder="e.g. Grumpy Capybara Stickers&#10;Cute Dog Vector Art"
@@ -633,7 +633,7 @@
 									value={config.systemPrompt || ''}
 									oninput={(e) => updateConfigField('systemPrompt', (e.target as HTMLTextAreaElement).value)}
 									placeholder="System prompt template..."
-									rows="5"
+									rows="8"
 									style="width: 100%; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-sm); color: var(--color-text); padding: var(--space-2) var(--space-3); font-size: 0.65rem; outline: none; resize: vertical; font-family: var(--font-mono); line-height: 1.4;"
 								></textarea>
 								<span style="font-size: 0.6rem; color: var(--color-text-muted); margin-top: -2px;">
