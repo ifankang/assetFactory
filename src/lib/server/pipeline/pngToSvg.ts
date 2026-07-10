@@ -1,4 +1,29 @@
 import type { WorkflowConfig } from '$lib/types';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
+import { writeFile, readFile, unlink } from 'fs/promises';
+import { join } from 'path';
+
+const execFileAsync = promisify(execFile);
+
+/**
+ * Resolve the Inkscape CLI command wrapper path (.com) based on user configuration.
+ */
+async function getInkscapeComPath(config?: WorkflowConfig): Promise<string> {
+	if (config?.inkscapePath) {
+		let pathCandidate = config.inkscapePath;
+		// Normalize
+		if (pathCandidate.endsWith('\\') || pathCandidate.endsWith('/')) {
+			pathCandidate += 'inkscape.com';
+		} else if (!pathCandidate.toLowerCase().endsWith('inkscape.com') && !pathCandidate.toLowerCase().endsWith('inkscape.exe') && !pathCandidate.toLowerCase().endsWith('inkscape')) {
+			pathCandidate += '\\inkscape.com';
+		} else if (pathCandidate.toLowerCase().endsWith('inkscape.exe')) {
+			pathCandidate = pathCandidate.replace(/\.exe$/i, '.com');
+		}
+		return pathCandidate;
+	}
+	return 'inkscape.com';
+}
 
 export async function convertToSvg(pngBuffer: Buffer, config?: WorkflowConfig): Promise<string> {
 	// Dynamically import to avoid loading native DLLs at startup
@@ -39,7 +64,25 @@ export async function convertToSvg(pngBuffer: Buffer, config?: WorkflowConfig): 
 	// 4. Vectorize the preprocessed high-fidelity PNG using the selected engine
 	let rawSvg: string;
 
-	if (config?.vectorizerEngine === 'potrace') {
+	if (config?.vectorizerEngine === 'inkscape') {
+		const inkscapeBin = await getInkscapeComPath(config);
+		const rand = Math.random().toString(36).substring(7);
+		const tempPng = join(config.outputFolder || './output', `temp_trace_${rand}.png`);
+		const tempSvg = join(config.outputFolder || './output', `temp_trace_${rand}.svg`);
+
+		try {
+			await writeFile(tempPng, smoothPngBuffer);
+
+			// Run Inkscape object-trace CLI action (traces 8 colors/scans, smooth, remove background, speckle filter size 4, smooth corners 1.0, optimize 0.20)
+			const actionsStr = `select-all;object-trace:8,true,true,true,4,1.0,0.20;export-filename:${tempSvg};export-do`;
+			await execFileAsync(inkscapeBin, [tempPng, '--actions', actionsStr]);
+
+			rawSvg = await readFile(tempSvg, 'utf-8');
+		} finally {
+			await unlink(tempPng).catch(() => {});
+			await unlink(tempSvg).catch(() => {});
+		}
+	} else if (config?.vectorizerEngine === 'potrace') {
 		const { default: potrace } = await import('potrace');
 		
 		// Downscale the smooth PNG to 512x512 specifically for Potrace.

@@ -732,12 +732,13 @@
 								<span class="input-label">Vectorizer Engine</span>
 								<select
 									value={config.vectorizerEngine || 'vtracer'}
-									onchange={(e) => updateConfigField('vectorizerEngine', (e.target as HTMLSelectElement).value as 'vtracer' | 'potrace')}
+									onchange={(e) => updateConfigField('vectorizerEngine', (e.target as HTMLSelectElement).value as 'vtracer' | 'potrace' | 'inkscape')}
 									class="vectorizer-select"
 									style="width: 100%; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-sm); color: var(--color-text); padding: var(--space-2) var(--space-3); font-size: var(--text-xs); outline: none;"
 								>
 									<option value="vtracer">VTracer (Smooth Color Shapes)</option>
 									<option value="potrace">Potrace (Posterized Smooth Curves)</option>
+									<option value="inkscape">Inkscape (Trace Bitmap Action)</option>
 								</select>
 							</div>
 							<div style="display: flex; align-items: center; justify-content: space-between; padding: 4px 0; border-top: 1px solid var(--color-border); padding-top: var(--space-3);">

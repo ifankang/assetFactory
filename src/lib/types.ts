@@ -16,7 +16,7 @@ export interface WorkflowConfig {
 	resolution: { width: number; height: number };
 	gridSize: { rows: number; cols: number };
 	outputFolder: string;
-	vectorizerEngine?: 'vtracer' | 'potrace';
+	vectorizerEngine?: 'vtracer' | 'potrace' | 'inkscape';
 	systemPrompt?: string;
 	workflowMode?: 'auto' | 'manual';
 	inkscapeEnabled?: boolean;
