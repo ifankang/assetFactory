@@ -740,14 +740,41 @@
 									<option value="potrace">Potrace (Posterized Smooth Curves)</option>
 								</select>
 							</div>
+							<div style="display: flex; align-items: center; justify-content: space-between; padding: 4px 0; border-top: 1px solid var(--color-border); padding-top: var(--space-3);">
+								<span class="input-label" style="margin-bottom: 0;">Inkscape EPS Export</span>
+								<label class="toggle-switch">
+									<input
+										type="checkbox"
+										checked={config.inkscapeEnabled !== false}
+										onchange={(e) => updateConfigField('inkscapeEnabled', (e.target as HTMLInputElement).checked)}
+									/>
+									<span class="toggle-slider"></span>
+								</label>
+							</div>
+
+							{#if config.inkscapeEnabled !== false}
+								<div class="input-group" style="margin-top: 4px;">
+									<span class="input-label">Inkscape Bin Path</span>
+									<input
+										type="text"
+										value={config.inkscapePath || ''}
+										oninput={(e) => updateConfigField('inkscapePath', (e.target as HTMLInputElement).value)}
+										placeholder="e.g. E:\Inkscape\bin\"
+									/>
+									<span style="font-size: 0.6rem; color: var(--color-text-muted); margin-top: -2px;">
+										Folder path containing <code>inkscape.exe</code>
+									</span>
+								</div>
+							{/if}
+
 							<div style="display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--color-border); padding-top: var(--space-3); font-size: 0.65rem; color: var(--color-text-muted); line-height: 1.4;">
 								<div style="display: flex; align-items: center; gap: 6px;">
-									<span style="color: var(--color-success);">✓</span>
-									<span>Inkscape integration: <strong>ACTIVE</strong></span>
+									<span style="color: {config.inkscapeEnabled !== false ? 'var(--color-success)' : 'var(--color-text-muted)'};">●</span>
+									<span>Inkscape integration: <strong>{config.inkscapeEnabled !== false ? 'ENABLED' : 'DISABLED'}</strong></span>
 								</div>
 								<div style="display: flex; align-items: center; gap: 6px;">
 									<span style="color: var(--color-success);">✓</span>
-									<span>Outputs: <strong>SVG, EPS, PNG</strong></span>
+									<span>Outputs: <strong>SVG, {config.inkscapeEnabled !== false ? 'EPS, ' : ''}PNG</strong></span>
 								</div>
 							</div>
 						</div>

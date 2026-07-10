@@ -19,6 +19,8 @@ export interface WorkflowConfig {
 	vectorizerEngine?: 'vtracer' | 'potrace';
 	systemPrompt?: string;
 	workflowMode?: 'auto' | 'manual';
+	inkscapeEnabled?: boolean;
+	inkscapePath?: string;
 }
 
 /** Status of a single pipeline step */

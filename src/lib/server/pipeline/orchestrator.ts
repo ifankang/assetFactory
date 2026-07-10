@@ -205,7 +205,7 @@ export async function runPipeline(
 			emit(onEvent, 'step:start', prompt.id, 'bundleEps', {});
 
 			const { result: bundlePath, elapsedMs: epsMs } = await timed(() =>
-				bundleToEps(svgStrings, config.outputFolder, prompt.id)
+				bundleToEps(svgStrings, config, prompt.id)
 			);
 
 			emit(onEvent, 'step:complete', prompt.id, 'bundleEps', {
