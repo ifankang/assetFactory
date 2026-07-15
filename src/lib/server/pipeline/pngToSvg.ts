@@ -25,6 +25,114 @@ async function getInkscapeComPath(config?: WorkflowConfig): Promise<string> {
 	return 'inkscape.com';
 }
 
+/**
+ * Fills all internal holes inside a 1-channel binary mask using flood-fill.
+ * Uses a low threshold to preserve thin, semi-transparent details like handles.
+ */
+function fillInternalHoles(mask: Buffer, width: number, height: number): Buffer {
+	const size = width * height;
+	const visited = new Uint8Array(size); // 0 = unvisited, 1 = reachable background, 2 = foreground
+	
+	// Pre-classify foreground pixels (alpha > 20 to keep thin details)
+	for (let i = 0; i < size; i++) {
+		if (mask[i] > 20) {
+			visited[i] = 2; // Foreground
+		}
+	}
+	
+	const queue = new Int32Array(size);
+	let head = 0;
+	let tail = 0;
+	
+	// Seed the queue from outer borders
+	for (let x = 0; x < width; x++) {
+		const topIdx = x;
+		if (visited[topIdx] === 0) {
+			visited[topIdx] = 1;
+			queue[tail++] = topIdx;
+		}
+		const botIdx = (height - 1) * width + x;
+		if (visited[botIdx] === 0) {
+			visited[botIdx] = 1;
+			queue[tail++] = botIdx;
+		}
+	}
+	for (let y = 1; y < height - 1; y++) {
+		const leftIdx = y * width;
+		if (visited[leftIdx] === 0) {
+			visited[leftIdx] = 1;
+			queue[tail++] = leftIdx;
+		}
+		const rightIdx = y * width + (width - 1);
+		if (visited[rightIdx] === 0) {
+			visited[rightIdx] = 1;
+			queue[tail++] = rightIdx;
+		}
+	}
+	
+	// Run breadth-first search to label reachable background pixels
+	const dirs = [-1, 1, -width, width];
+	while (head < tail) {
+		const idx = queue[head++];
+		const x = idx % width;
+		
+		for (const d of dirs) {
+			const nIdx = idx + d;
+			if (d === -1 && x === 0) continue;
+			if (d === 1 && x === width - 1) continue;
+			if (nIdx < 0 || nIdx >= size) continue;
+			
+			if (visited[nIdx] === 0) {
+				visited[nIdx] = 1;
+				queue[tail++] = nIdx;
+			}
+		}
+	}
+	
+	// Create the repaired mask: anything not reachable from outer edges is foreground (solidifies holes)
+	const result = Buffer.alloc(size);
+	for (let i = 0; i < size; i++) {
+		if (visited[i] !== 1) {
+			result[i] = 255; // Foreground
+		} else {
+			result[i] = 0;   // Background
+		}
+	}
+	
+	return result;
+}
+
+/**
+ * Repairs the foreground mask using flood-fill and morphological closing.
+ */
+async function repairMask(alphaMaskBuffer: Buffer, width: number, height: number, sharpInstance: any): Promise<Buffer> {
+	// 1. Fill internal holes
+	const filled = fillInternalHoles(alphaMaskBuffer, width, height);
+
+	// 2. Morphological Closing (Dilation then Erosion) to bridge tiny gaps
+	const dilated = await sharpInstance(filled, { raw: { width, height, channels: 1 } })
+		.blur(2)
+		.threshold(40) // low threshold to dilate
+		.raw()
+		.toBuffer();
+
+	const closed = await sharpInstance(dilated, { raw: { width, height, channels: 1 } })
+		.blur(2)
+		.threshold(215) // high threshold to erode back
+		.raw()
+		.toBuffer();
+
+	// 3. Final smooth thresholding and noise removal
+	const finalMask = await sharpInstance(closed, { raw: { width, height, channels: 1 } })
+		.median(5)
+		.blur(1.5)
+		.threshold(128)
+		.raw()
+		.toBuffer();
+
+	return finalMask;
+}
+
 export async function convertToSvg(pngBuffer: Buffer, config?: WorkflowConfig, originalPngBuffer?: Buffer): Promise<string> {
 	// Dynamically import to avoid loading native DLLs at startup
 	const { vectorize, optimize, ColorMode, Hierarchical, PathSimplifyMode } = await import('@neplex/vectorizer');
@@ -39,23 +147,20 @@ export async function convertToSvg(pngBuffer: Buffer, config?: WorkflowConfig, o
 		const width = 1024;
 		const height = 1024;
 
-		// 1. Ingest & Extract Foreground Segmentation Mask from pngBuffer (cutout)
-		// We upscale and repair the mask: remove isolated noise, apply morphological closing, and smooth boundaries
-		const alphaMaskBuffer = await sharp(pngBuffer)
+		// 1. Ingest & Extract Foreground Segmentation Mask from pngBuffer (cutout) and repair it
+		const rawAlphaMask = await sharp(pngBuffer)
 			.resize(width, height, {
 				kernel: 'lanczos3',
 				fit: 'contain',
 				background: { r: 0, g: 0, b: 0, alpha: 0 }
 			})
 			.extractChannel('alpha')
-			.median(5)          // Fill tiny holes and remove isolated noise speckles
-			.blur(2)            // Smooth mask boundaries without losing thin structures
-			.threshold(128)     // Generate a clean, binary mask
 			.raw()
 			.toBuffer();
 
+		const repairedAlphaMask = await repairMask(rawAlphaMask, width, height, sharp);
+
 		// 2. Color Processing on ORIGINAL PNG (originalPngBuffer)
-		// To prevent color bleeding and dark borders, color analysis is run on the original RGB pixels
 		const originalSource = originalPngBuffer || pngBuffer;
 		const { data: rawPixelData } = await sharp(originalSource)
 			.resize(width, height, {
@@ -69,10 +174,10 @@ export async function convertToSvg(pngBuffer: Buffer, config?: WorkflowConfig, o
 			.toBuffer({ resolveWithObject: true });
 
 		// 3. High-quality Color Quantization (Do not quantize transparent pixels)
-		// We sample pixel points exclusively from the repaired foreground mask
+		// We sample points exclusively from the repaired foreground mask
 		const fgPixels: number[] = [];
 		for (let i = 0; i < width * height; i++) {
-			if (alphaMaskBuffer[i] > 128) {
+			if (repairedAlphaMask[i] > 128) {
 				fgPixels.push(
 					rawPixelData[i * 4],
 					rawPixelData[i * 4 + 1],
@@ -82,7 +187,7 @@ export async function convertToSvg(pngBuffer: Buffer, config?: WorkflowConfig, o
 			}
 		}
 
-		// Fallback to all pixels if the mask is completely empty
+		// Fallback if the mask is empty
 		const quantizeBuffer = fgPixels.length > 0 
 			? new Uint8Array(fgPixels) 
 			: new Uint8Array(rawPixelData);
@@ -126,7 +231,7 @@ export async function convertToSvg(pngBuffer: Buffer, config?: WorkflowConfig, o
 				const pg = resultPixels[i * 4 + 1];
 				const pb = resultPixels[i * 4 + 2];
 				const pa = resultPixels[i * 4 + 3];
-				const maskVal = alphaMaskBuffer[i];
+				const maskVal = repairedAlphaMask[i]; // Use repaired mask
 
 				if (pr === c.r && pg === c.g && pb === c.b && maskVal > 128) {
 					maskBuffer[i] = 0; // black (ink to trace)
@@ -159,12 +264,12 @@ export async function convertToSvg(pngBuffer: Buffer, config?: WorkflowConfig, o
 			const hexColor = `#${rHex}${gHex}${bHex}`;
 
 			try {
-				// Clean binary mask (remove tiny speckles and fill gaps)
+				// Clean binary mask (remove tiny speckles and smooth wobbly edges)
 				const cleanedMask = await sharp(layer.maskBuffer, {
 					raw: { width, height, channels: 1 }
 				})
-				.median(3)     // Discard speckles and fill gaps
-				.blur(0.5)     // Smooth boundaries
+				.median(5)     // Clear noise speckles
+				.blur(1.5)     // Soften edge steps to produce smooth curves
 				.threshold(128)
 				.png()
 				.toBuffer();
