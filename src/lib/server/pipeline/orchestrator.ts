@@ -179,7 +179,7 @@ export async function runPipeline(
 			const svgStart = performance.now();
 
 			for (let i = 0; i < noBgBuffers.length; i++) {
-				const svg = await convertToSvg(noBgBuffers[i], config);
+				const svg = await convertToSvg(noBgBuffers[i], config, cells[i]);
 				svgStrings.push(svg);
 				const svgPath = join(promptDir, `svg_${i}.svg`);
 				await writeFile(svgPath, svg, 'utf-8');
