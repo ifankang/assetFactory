@@ -33,9 +33,9 @@ function fillInternalHoles(mask: Buffer, width: number, height: number): Buffer 
 	const size = width * height;
 	const visited = new Uint8Array(size); // 0 = unvisited, 1 = reachable background, 2 = foreground
 	
-	// Pre-classify foreground pixels (alpha > 20 to keep thin details)
+	// Pre-classify foreground pixels (values set to 255 in combinedMask)
 	for (let i = 0; i < size; i++) {
-		if (mask[i] > 20) {
+		if (mask[i] > 128) {
 			visited[i] = 2; // Foreground
 		}
 	}
@@ -103,29 +103,78 @@ function fillInternalHoles(mask: Buffer, width: number, height: number): Buffer 
 }
 
 /**
- * Repairs the foreground mask using flood-fill and morphological closing.
+ * Repairs the foreground mask using flood-fill and morphological closing,
+ * combined with color distance thresholding to preserve thin structures.
  */
-async function repairMask(alphaMaskBuffer: Buffer, width: number, height: number, sharpInstance: any): Promise<Buffer> {
-	// 1. Fill internal holes
-	const filled = fillInternalHoles(alphaMaskBuffer, width, height);
+async function repairMask(
+	alphaMaskBuffer: Buffer,
+	rawPixelData: Uint8Array,
+	width: number,
+	height: number,
+	sharpInstance: any
+): Promise<Buffer> {
+	const size = width * height;
+	
+	// 1. Sample background color from 4 corners of original image
+	const getPixel = (x: number, y: number) => {
+		const idx = (y * width + x) * 4;
+		return {
+			r: rawPixelData[idx],
+			g: rawPixelData[idx + 1],
+			b: rawPixelData[idx + 2]
+		};
+	};
+	
+	// Sample slightly offset from the absolute corners to avoid border artifacts
+	const c1 = getPixel(4, 4);
+	const c2 = getPixel(width - 5, 4);
+	const c3 = getPixel(4, height - 5);
+	const c4 = getPixel(width - 5, height - 5);
+	const bgR = (c1.r + c2.r + c3.r + c4.r) / 4;
+	const bgG = (c1.g + c2.g + c3.g + c4.g) / 4;
+	const bgB = (c1.b + c2.b + c3.b + c4.b) / 4;
 
-	// 2. Morphological Closing (Dilation then Erosion) to bridge tiny gaps
+	// 2. Generate a combined mask using both AI segmentation alpha and color difference
+	const combinedMask = Buffer.alloc(size);
+	for (let i = 0; i < size; i++) {
+		const r = rawPixelData[i * 4];
+		const g = rawPixelData[i * 4 + 1];
+		const b = rawPixelData[i * 4 + 2];
+		
+		const dist = Math.sqrt(
+			(r - bgR) ** 2 +
+			(g - bgG) ** 2 +
+			(b - bgB) ** 2
+		);
+		
+		// Threshold: 35. If color is distinct from background (dist > 35) OR AI says it's foreground (alpha > 20)
+		if (dist > 35 || alphaMaskBuffer[i] > 20) {
+			combinedMask[i] = 255;
+		} else {
+			combinedMask[i] = 0;
+		}
+	}
+
+	// 3. Fill internal holes
+	const filled = fillInternalHoles(combinedMask, width, height);
+
+	// 4. Morphological Closing (Dilation then Erosion) to bridge tiny gaps
 	const dilated = await sharpInstance(filled, { raw: { width, height, channels: 1 } })
-		.blur(2)
+		.blur(1.5)
 		.threshold(40) // low threshold to dilate
 		.raw()
 		.toBuffer();
 
 	const closed = await sharpInstance(dilated, { raw: { width, height, channels: 1 } })
-		.blur(2)
+		.blur(1.5)
 		.threshold(215) // high threshold to erode back
 		.raw()
 		.toBuffer();
 
-	// 3. Final smooth thresholding and noise removal
+	// 5. Final smooth thresholding and noise removal
 	const finalMask = await sharpInstance(closed, { raw: { width, height, channels: 1 } })
 		.median(5)
-		.blur(1.5)
+		.blur(1)
 		.threshold(128)
 		.raw()
 		.toBuffer();
@@ -147,20 +196,7 @@ export async function convertToSvg(pngBuffer: Buffer, config?: WorkflowConfig, o
 		const width = 1024;
 		const height = 1024;
 
-		// 1. Ingest & Extract Foreground Segmentation Mask from pngBuffer (cutout) and repair it
-		const rawAlphaMask = await sharp(pngBuffer)
-			.resize(width, height, {
-				kernel: 'lanczos3',
-				fit: 'contain',
-				background: { r: 0, g: 0, b: 0, alpha: 0 }
-			})
-			.extractChannel('alpha')
-			.raw()
-			.toBuffer();
-
-		const repairedAlphaMask = await repairMask(rawAlphaMask, width, height, sharp);
-
-		// 2. Color Processing on ORIGINAL PNG (originalPngBuffer)
+		// 1. Color Processing on ORIGINAL PNG (originalPngBuffer)
 		const originalSource = originalPngBuffer || pngBuffer;
 		const { data: rawPixelData } = await sharp(originalSource)
 			.resize(width, height, {
@@ -172,6 +208,19 @@ export async function convertToSvg(pngBuffer: Buffer, config?: WorkflowConfig, o
 			.ensureAlpha()      // Guarantee 4 channels (RGBA)
 			.raw()
 			.toBuffer({ resolveWithObject: true });
+
+		// 2. Ingest & Extract Foreground Segmentation Mask from pngBuffer (cutout) and repair it
+		const rawAlphaMask = await sharp(pngBuffer)
+			.resize(width, height, {
+				kernel: 'lanczos3',
+				fit: 'contain',
+				background: { r: 0, g: 0, b: 0, alpha: 0 }
+			})
+			.extractChannel('alpha')
+			.raw()
+			.toBuffer();
+
+		const repairedAlphaMask = await repairMask(rawAlphaMask, rawPixelData, width, height, sharp);
 
 		// 3. High-quality Color Quantization (Do not quantize transparent pixels)
 		// We sample points exclusively from the repaired foreground mask
