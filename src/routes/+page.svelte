@@ -33,6 +33,51 @@
 		outputFolder: './output'
 	});
 
+	// Combobox state
+	let modelSearchOpen = $state(false);
+	let modelSearchInput = $state('');
+
+	const PREDEFINED_MODELS = [
+		{ id: 'flux', title: 'Flux (Recommended & Fast)' },
+		{ id: 'zimage', title: 'Z-Image (Alibaba)' },
+		{ id: 'grok-imagine', title: 'Grok Imagine (xAI)' },
+		{ id: 'gptimage', title: 'GPT Image (OpenAI)' },
+		{ id: 'wan-image', title: 'Wan Image (Alibaba)' },
+		{ id: 'kontext', title: 'Kontext (BFL)' },
+		{ id: 'klein', title: 'Klein (BFL)' },
+		{ id: 'nanobanana', title: 'Nanobanana (Google)' }
+	];
+
+	// Keep search input in sync with current config model
+	$effect(() => {
+		modelSearchInput = config.model;
+	});
+
+	let filteredModels = $derived.by(() => {
+		const query = modelSearchInput.toLowerCase().trim();
+		if (!query) return PREDEFINED_MODELS;
+		return PREDEFINED_MODELS.filter(
+			(m) => m.id.toLowerCase().includes(query) || m.title.toLowerCase().includes(query)
+		);
+	});
+
+	function handleModelSearchInput(e: Event) {
+		const input = e.target as HTMLInputElement;
+		modelSearchInput = input.value;
+		updateConfigField('model', input.value);
+	}
+
+	function selectModel(modelId: string) {
+		updateConfigField('model', modelId);
+		modelSearchOpen = false;
+	}
+
+	function handleModelSearchBlur() {
+		setTimeout(() => {
+			modelSearchOpen = false;
+		}, 180);
+	}
+
 	// UI Active states
 	let activeTab = $state<'logs' | 'source' | 'stickers'>('logs');
 	let selectedPromptId = $state<number>(1);
@@ -572,14 +617,50 @@
 					</button>
 					{#if expandedSections.textToImage}
 						<div class="accordion-content">
-							<div class="input-group">
+							<div class="input-group combobox-wrapper" style="position: relative;">
 								<span class="input-label">Model Name</span>
-								<input
-									type="text"
-									value={config.model}
-									oninput={(e) => updateConfigField('model', (e.target as HTMLInputElement).value)}
-									placeholder="zimage"
-								/>
+								<div class="combobox-container" style="position: relative; width: 100%;">
+									<input
+										type="text"
+										value={modelSearchInput}
+										oninput={handleModelSearchInput}
+										onfocus={() => modelSearchOpen = true}
+										onblur={handleModelSearchBlur}
+										placeholder="Search or type model..."
+										class="combobox-input"
+										style="width: 100%; padding-right: 28px;"
+									/>
+									<button 
+										type="button" 
+										class="combobox-arrow" 
+										onclick={() => modelSearchOpen = !modelSearchOpen}
+										style="position: absolute; right: 0; top: 0; bottom: 0; width: 28px; background: transparent; border: none; color: var(--color-text-muted); cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 0.55rem; outline: none; z-index: 2;"
+										tabindex="-1"
+									>
+										▼
+									</button>
+									
+									{#if modelSearchOpen}
+										<ul class="combobox-dropdown">
+											{#each filteredModels as m}
+												<li role="presentation">
+													<button 
+														type="button"
+														class="combobox-option" 
+														class:selected={m.id === config.model}
+														onmousedown={() => selectModel(m.id)}
+													>
+														<span class="option-title">{m.title}</span>
+														<span class="option-id">{m.id}</span>
+													</button>
+												</li>
+											{/each}
+											{#if filteredModels.length === 0}
+												<li class="combobox-no-results">Press enter to use "{modelSearchInput}"</li>
+											{/if}
+										</ul>
+									{/if}
+								</div>
 							</div>
 							<div class="input-group-row" style="display: flex; gap: 8px;">
 								<div class="input-group" style="flex: 1;">
@@ -1095,5 +1176,66 @@
 		100% {
 			box-shadow: 0 0 0 0 rgba(46, 213, 115, 0);
 		}
+	}
+
+	/* Combobox Styles */
+	.combobox-dropdown {
+		position: absolute;
+		top: 100%;
+		left: 0;
+		right: 0;
+		margin-top: 4px;
+		padding: 4px 0;
+		background: rgba(17, 24, 39, 0.95);
+		backdrop-filter: blur(8px);
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-sm);
+		list-style: none;
+		max-height: 160px;
+		overflow-y: auto;
+		z-index: 1000;
+		box-shadow: var(--shadow-lg);
+	}
+
+	.combobox-option {
+		width: 100%;
+		border: none;
+		background: transparent;
+		padding: var(--space-2) var(--space-3);
+		cursor: pointer;
+		display: flex;
+		flex-direction: column;
+		gap: 1px;
+		transition: background var(--duration-fast);
+		text-align: left;
+		outline: none;
+	}
+
+	.combobox-option:hover {
+		background: rgba(124, 58, 237, 0.15);
+	}
+
+	.combobox-option.selected {
+		background: rgba(124, 58, 237, 0.3);
+		border-left: 2px solid var(--color-purple);
+	}
+
+	.option-title {
+		font-size: 0.7rem;
+		font-weight: 600;
+		color: var(--color-text);
+	}
+
+	.option-id {
+		font-size: 0.6rem;
+		color: var(--color-text-muted);
+		font-family: var(--font-mono);
+	}
+
+	.combobox-no-results {
+		padding: var(--space-3);
+		font-size: 0.65rem;
+		color: var(--color-text-muted);
+		text-align: center;
 	}
 </style>
