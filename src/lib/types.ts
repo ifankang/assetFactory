@@ -21,6 +21,7 @@ export interface WorkflowConfig {
 	workflowMode?: 'auto' | 'manual';
 	inkscapeEnabled?: boolean;
 	inkscapePath?: string;
+	colorLimit?: number;
 }
 
 /** Status of a single pipeline step */

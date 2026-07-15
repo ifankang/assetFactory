@@ -588,7 +588,7 @@
 						</div>
 						<span class="accordion-chevron">▼</span>
 					</button>
-					{#if expandedSections.readPrompts}
+					<div class="accordion-wrapper" class:expanded={expandedSections.readPrompts}>
 						<div class="accordion-content">
 							<span class="input-label">Enter Prompts (one per line)</span>
 							<textarea
@@ -603,7 +603,7 @@
 								<span>Total prompts detected: <strong>{currentPromptCount}</strong></span>
 							</div>
 						</div>
-					{/if}
+					</div>
 				</div>
 
 				<!-- Step 2: Image Generation settings -->
@@ -615,7 +615,7 @@
 						</div>
 						<span class="accordion-chevron">▼</span>
 					</button>
-					{#if expandedSections.textToImage}
+					<div class="accordion-wrapper" class:expanded={expandedSections.textToImage}>
 						<div class="accordion-content">
 							<div class="input-group combobox-wrapper" style="position: relative;">
 								<span class="input-label">Model Name</span>
@@ -722,7 +722,7 @@
 								</span>
 							</div>
 						</div>
-					{/if}
+					</div>
 				</div>
 
 				<!-- Step 3: Split Grid settings -->
@@ -734,7 +734,7 @@
 						</div>
 						<span class="accordion-chevron">▼</span>
 					</button>
-					{#if expandedSections.splitGrid}
+					<div class="accordion-wrapper" class:expanded={expandedSections.splitGrid}>
 						<div class="accordion-content">
 							<div class="input-group-row" style="display: flex; gap: 8px;">
 								<div class="input-group" style="flex: 1;">
@@ -758,7 +758,7 @@
 								The generated composite image will be sliced into {config.gridSize.rows * config.gridSize.cols} separate PNG assets.
 							</div>
 						</div>
-					{/if}
+					</div>
 				</div>
 
 				<!-- Step 4: Remove Background settings -->
@@ -770,7 +770,7 @@
 						</div>
 						<span class="accordion-chevron">▼</span>
 					</button>
-					{#if expandedSections.removeBackground}
+					<div class="accordion-wrapper" class:expanded={expandedSections.removeBackground}>
 						<div class="accordion-content">
 							<div style="display: flex; align-items: center; justify-content: space-between; padding: 4px 0;">
 								<span class="input-label" style="margin-bottom: 0;">AI Background Removal</span>
@@ -787,7 +787,7 @@
 								</div>
 							</div>
 						</div>
-					{/if}
+					</div>
 				</div>
 
 				<!-- Step 5: Bundle EPS settings -->
@@ -799,7 +799,7 @@
 						</div>
 						<span class="accordion-chevron">▼</span>
 					</button>
-					{#if expandedSections.pngToSvg || expandedSections.bundleEps}
+					<div class="accordion-wrapper" class:expanded={expandedSections.pngToSvg || expandedSections.bundleEps}>
 						<div class="accordion-content">
 							<div class="input-group">
 								<span class="input-label">Output Folder</span>
@@ -818,10 +818,26 @@
 									style="width: 100%; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-sm); color: var(--color-text); padding: var(--space-2) var(--space-3); font-size: var(--text-xs); outline: none;"
 								>
 									<option value="vtracer">VTracer (Smooth Color Shapes)</option>
-									<option value="potrace">Potrace (Posterized Smooth Curves)</option>
+									<option value="potrace">Potrace (Multi-color Layered Tracing)</option>
 									<option value="inkscape">Inkscape (Trace Bitmap Action)</option>
 								</select>
 							</div>
+
+							{#if config.vectorizerEngine === 'potrace'}
+								<div class="input-group" style="margin-top: 4px;">
+									<span class="input-label">Color Limit (Quantization)</span>
+									<input
+										type="number"
+										min="2"
+										max="32"
+										value={config.colorLimit || 8}
+										oninput={(e) => updateConfigField('colorLimit', Number((e.target as HTMLInputElement).value))}
+									/>
+									<span style="font-size: 0.6rem; color: var(--color-text-muted); margin-top: -2px;">
+										Max number of color layers for Potrace vectorization.
+									</span>
+								</div>
+							{/if}
 							<div style="display: flex; align-items: center; justify-content: space-between; padding: 4px 0; border-top: 1px solid var(--color-border); padding-top: var(--space-3);">
 								<span class="input-label" style="margin-bottom: 0;">Inkscape EPS Export</span>
 								<label class="toggle-switch">
@@ -860,7 +876,7 @@
 								</div>
 							</div>
 						</div>
-					{/if}
+					</div>
 				</div>
 			</div>
 

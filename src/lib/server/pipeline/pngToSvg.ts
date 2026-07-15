@@ -83,23 +83,107 @@ export async function convertToSvg(pngBuffer: Buffer, config?: WorkflowConfig): 
 			await unlink(tempSvg).catch(() => {});
 		}
 	} else if (config?.vectorizerEngine === 'potrace') {
+		const { buildPaletteSync, applyPaletteSync, utils } = await import('image-q');
 		const { default: potrace } = await import('potrace');
-		
-		// Downscale the smooth PNG to 512x512 specifically for Potrace.
-		// Since Potrace is a pure JavaScript port, tracing 1024x1024 images is extremely slow.
-		// Downscaling makes it trace 8x faster while Potrace's mathematical curve-fitting maintains perfect smoothness.
-		const potracePngBuffer = await sharp(smoothPngBuffer)
-			.resize(512, 512, { fit: 'contain' })
-			.png()
-			.toBuffer();
 
-		rawSvg = await new Promise<string>((resolve, reject) => {
-			// steps: 4 is fast, looks clean, and avoids threshold warnings
-			potrace.posterize(potracePngBuffer, { steps: 4 }, (err, svg) => {
-				if (err) return reject(err);
-				resolve(svg);
-			});
-		});
+		// 1. Get original dimensions from smooth PNG
+		const metadata = await sharp(smoothPngBuffer).metadata();
+		const width = metadata.width || 512;
+		const height = metadata.height || 512;
+
+		// 2. Extract raw RGBA pixels from the smoothed image buffer
+		const { data: rawPixelData } = await sharp(smoothPngBuffer)
+			.ensureAlpha()
+			.raw()
+			.toBuffer({ resolveWithObject: true });
+
+		// 3. Convert raw pixel buffer to image-q PointContainer
+		const inPointContainer = utils.PointContainer.fromUint8Array(
+			new Uint8Array(rawPixelData),
+			width,
+			height
+		);
+
+		// 4. Build palette and quantize colors
+		const maxColors = config?.colorLimit || 8;
+		const palette = buildPaletteSync([inPointContainer], { colors: maxColors });
+		const resultContainer = applyPaletteSync(inPointContainer, palette);
+		const resultPixels = resultContainer.toUint8Array();
+
+		const paletteColors = palette.getPointContainer().getPointArray();
+		const innerContents: string[] = [];
+
+		// 5. Separate and trace each color layer
+		for (let idx = 0; idx < paletteColors.length; idx++) {
+			const c = paletteColors[idx];
+			
+			// Skip transparent layers to avoid tracing empty background space
+			if (c.a < 128) {
+				continue;
+			}
+
+			const rHex = c.r.toString(16).padStart(2, '0');
+			const gHex = c.g.toString(16).padStart(2, '0');
+			const bHex = c.b.toString(16).padStart(2, '0');
+			const hexColor = `#${rHex}${gHex}${bHex}`;
+
+			// Create a monochrome mask: matching = 0 (black/ink), non-matching = 255 (white/background)
+			const maskBuffer = Buffer.alloc(width * height);
+			let matches = 0;
+			for (let i = 0; i < width * height; i++) {
+				const pr = resultPixels[i * 4];
+				const pg = resultPixels[i * 4 + 1];
+				const pb = resultPixels[i * 4 + 2];
+				const pa = resultPixels[i * 4 + 3];
+
+				if (pr === c.r && pg === c.g && pb === c.b && pa === c.a) {
+					maskBuffer[i] = 0;
+					matches++;
+				} else {
+					maskBuffer[i] = 255;
+				}
+			}
+
+			// Skip tracing if no pixels matched this color (prevents empty paths/trace failures)
+			if (matches === 0) {
+				continue;
+			}
+
+			try {
+				// Convert monochrome mask to a PNG buffer in memory
+				const pngMask = await sharp(maskBuffer, {
+					raw: {
+						width,
+						height,
+						channels: 1
+					}
+				})
+				.png()
+				.toBuffer();
+
+				// Trace color mask using potrace with designated color code
+				const svgString = await new Promise<string>((resolve, reject) => {
+					potrace.trace(pngMask, { color: hexColor }, (err, svg) => {
+						if (err) return reject(err);
+						resolve(svg);
+					});
+				});
+
+				// Extract inner content inside the <svg> wrapper (like <g fill="#..."> <path ... /> </g>)
+				const innerContent = svgString.replace(/<\/?svg[^>]*>/gi, '').trim();
+				if (innerContent) {
+					innerContents.push(innerContent);
+				}
+			} catch (traceError) {
+				// Gracefully handle trace exceptions for individual color layers per operational constraints
+				console.error(`[potrace] Failed to trace layer ${hexColor}:`, traceError);
+			}
+		}
+
+		// Compose final SVG using original viewBox dimensions
+		rawSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}">
+${innerContents.join('\n')}
+</svg>`;
 	} else {
 		// Default to VTracer (Clean Sticker Profile)
 		rawSvg = await vectorize(smoothPngBuffer, {
