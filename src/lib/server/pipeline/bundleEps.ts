@@ -68,7 +68,7 @@ export async function bundleToEps(
 	const promptDir = join(config.outputFolder, `prompt_${promptId}`);
 	await mkdir(promptDir, { recursive: true });
 
-	// Write all SVG files first
+	// 1. Write individual SVG files
 	const svgPaths: string[] = [];
 	for (let i = 0; i < svgStrings.length; i++) {
 		const svgPath = join(promptDir, `svg_${i}.svg`);
@@ -76,11 +76,52 @@ export async function bundleToEps(
 		svgPaths.push(svgPath);
 	}
 
-	// Attempt EPS conversion via Inkscape if enabled
+	// 2. Generate and write the bundled grid SVG containing all SVGs combined
+	const cols = config.gridSize?.cols || 3;
+	const rows = config.gridSize?.rows || 3;
+
+	let cellW = 10240;
+	let cellH = 10240;
+
+	// Attempt to extract dimensions from the first SVG to keep alignment correct
+	if (svgStrings.length > 0) {
+		const viewBoxMatch = svgStrings[0].match(/viewBox=["']\s*([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)\s*["']/i);
+		if (viewBoxMatch) {
+			cellW = parseFloat(viewBoxMatch[3]);
+			cellH = parseFloat(viewBoxMatch[4]);
+		}
+	}
+
+	const groupedContents: string[] = [];
+	for (let i = 0; i < svgStrings.length; i++) {
+		const row = Math.floor(i / cols);
+		const col = i % cols;
+		const x = col * cellW;
+		const y = row * cellH;
+
+		// Extract inner content inside the <svg> wrapper
+		const match = svgStrings[i].match(/<svg[^>]*>([\s\S]*?)<\/svg>/i);
+		const innerContent = match ? match[1].trim() : '';
+
+		if (innerContent) {
+			groupedContents.push(`\t<g transform="translate(${x}, ${y})">\n\t\t${innerContent}\n\t</g>`);
+		}
+	}
+
+	const masterViewBox = `0 0 ${cols * cellW} ${rows * cellH}`;
+	const bundleSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${masterViewBox}" width="${cols * (cellW / 10)}" height="${rows * (cellH / 10)}">
+${groupedContents.join('\n')}
+</svg>`;
+
+	const bundleSvgPath = join(promptDir, 'bundle.svg');
+	await writeFile(bundleSvgPath, bundleSvg, 'utf-8');
+
+	// 3. Attempt EPS conversion via Inkscape if enabled
 	if (config.inkscapeEnabled !== false) {
 		const inkscapePath = await getInkscapePath(config);
 
 		if (inkscapePath) {
+			// Convert individual SVGs
 			for (let i = 0; i < svgPaths.length; i++) {
 				const epsPath = join(promptDir, `eps_${i}.eps`);
 				try {
@@ -91,6 +132,18 @@ export async function bundleToEps(
 						err instanceof Error ? err.message : err
 					);
 				}
+			}
+
+			// Convert bundled SVG to bundled EPS!
+			const bundleEpsPath = join(promptDir, 'bundle.eps');
+			try {
+				await convertSvgToEps(inkscapePath, bundleSvgPath, bundleEpsPath);
+				console.log('[bundleEps] Successfully created bundled EPS at:', bundleEpsPath);
+			} catch (err) {
+				console.warn(
+					`[bundleEps] Failed to convert bundle.svg to EPS:`,
+					err instanceof Error ? err.message : err
+				);
 			}
 		} else {
 			console.warn(
