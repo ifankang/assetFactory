@@ -158,24 +158,36 @@ async function repairMask(
 	// 3. Fill internal holes
 	const filled = fillInternalHoles(combinedMask, width, height);
 
-	// 4. Morphological Closing (Dilation then Erosion) to bridge tiny gaps
-	const dilated = await sharpInstance(filled, { raw: { width, height, channels: 1 } })
+	// 4. Morphological Dilation: Blur, then force 1-channel, then threshold
+	const blurred1 = await sharpInstance(filled, { raw: { width, height, channels: 1 } })
 		.blur(1.5)
-		.threshold(40) // low threshold to dilate
+		.extractChannel(0)
 		.raw()
 		.toBuffer();
 
-	const closed = await sharpInstance(dilated, { raw: { width, height, channels: 1 } })
-		.blur(1.5)
-		.threshold(215) // high threshold to erode back
+	const dilated = await sharpInstance(blurred1, { raw: { width, height, channels: 1 } })
+		.threshold(40)
+		.extractChannel(0)
 		.raw()
 		.toBuffer();
 
-	// 5. Final smooth thresholding and noise removal
+	// 5. Morphological Erosion: Blur, then force 1-channel, then threshold
+	const blurred2 = await sharpInstance(dilated, { raw: { width, height, channels: 1 } })
+		.blur(1.5)
+		.extractChannel(0)
+		.raw()
+		.toBuffer();
+
+	const closed = await sharpInstance(blurred2, { raw: { width, height, channels: 1 } })
+		.threshold(215)
+		.extractChannel(0)
+		.raw()
+		.toBuffer();
+
+	// 6. Final smooth and noise removal: Median filter, then extract single channel
 	const finalMask = await sharpInstance(closed, { raw: { width, height, channels: 1 } })
 		.median(5)
-		.blur(1)
-		.threshold(128)
+		.extractChannel(0)
 		.raw()
 		.toBuffer();
 
