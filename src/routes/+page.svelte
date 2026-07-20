@@ -839,6 +839,22 @@
 								</div>
 
 								<div class="input-group" style="margin-top: 8px;">
+									<span class="input-label">Clean Texture (Denoise)</span>
+									<select
+										value={config.denoiseLevel || 'none'}
+										onchange={(e) => updateConfigField('denoiseLevel', (e.target as HTMLSelectElement).value as 'none' | 'light' | 'medium' | 'heavy')}
+									>
+										<option value="none">None (Keep texture/distressed details)</option>
+										<option value="light">Light (Smooth minor dots)</option>
+										<option value="medium">Medium (Clean paper/grunge textures)</option>
+										<option value="heavy">Heavy (Flatten completely/solid color fields)</option>
+									</select>
+									<span style="font-size: 0.6rem; color: var(--color-text-muted); margin-top: -2px;">
+										Filters out halftone dots, paper textures, or distressed noise before vectorization.
+									</span>
+								</div>
+
+								<div class="input-group" style="margin-top: 8px;">
 									<span class="input-label">Speckle Filter (Turd Size)</span>
 									<input
 										type="number"

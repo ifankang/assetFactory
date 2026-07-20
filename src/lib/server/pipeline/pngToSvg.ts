@@ -210,12 +210,24 @@ export async function convertToSvg(pngBuffer: Buffer, config?: WorkflowConfig, o
 
 		// 1. Color Processing on ORIGINAL PNG (originalPngBuffer)
 		const originalSource = originalPngBuffer || pngBuffer;
-		const { data: rawPixelData } = await sharp(originalSource)
+		let imgPipeline = sharp(originalSource)
 			.resize(width, height, {
 				kernel: 'lanczos3',
 				fit: 'contain',
 				background: { r: 0, g: 0, b: 0, alpha: 0 }
-			})
+			});
+
+		// Apply denoise filter to clean grunge/distressed textures
+		const denoise = config?.denoiseLevel || 'none';
+		if (denoise === 'light') {
+			imgPipeline = imgPipeline.median(3);
+		} else if (denoise === 'medium') {
+			imgPipeline = imgPipeline.median(5);
+		} else if (denoise === 'heavy') {
+			imgPipeline = imgPipeline.median(9);
+		}
+
+		const { data: rawPixelData } = await imgPipeline
 			.blur(0.8)          // Light Gaussian blur for anti-aliasing and noise reduction
 			.ensureAlpha()      // Guarantee 4 channels (RGBA)
 			.raw()

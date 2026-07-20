@@ -24,6 +24,7 @@ export interface WorkflowConfig {
 	colorLimit?: number;
 	turdsize?: number;
 	smoothCurves?: boolean;
+	denoiseLevel?: 'none' | 'light' | 'medium' | 'heavy';
 }
 
 /** Status of a single pipeline step */
