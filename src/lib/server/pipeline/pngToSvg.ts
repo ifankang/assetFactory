@@ -269,7 +269,7 @@ export async function convertToSvg(pngBuffer: Buffer, config?: WorkflowConfig, o
 			.map((e) => `<path fill="${e.fill}" d="${e.paths}"/>`)
 			.join('\n');
 
-		rawSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}">
+		rawSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width * 10} ${height * 10}" width="${width}" height="${height}">
 ${innerContents}
 </svg>`;
 	} else {
