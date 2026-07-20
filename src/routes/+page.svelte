@@ -837,6 +837,32 @@
 										Max number of color layers for Potrace vectorization.
 									</span>
 								</div>
+
+								<div class="input-group" style="margin-top: 8px;">
+									<span class="input-label">Speckle Filter (Turd Size)</span>
+									<input
+										type="number"
+										min="1"
+										max="500"
+										value={config.turdsize !== undefined ? config.turdsize : 10}
+										oninput={(e) => updateConfigField('turdsize', Number((e.target as HTMLInputElement).value))}
+									/>
+									<span style="font-size: 0.6rem; color: var(--color-text-muted); margin-top: -2px;">
+										Ignores speckles and noise spots smaller than this pixel area. Higher values produce cleaner results (default 10).
+									</span>
+								</div>
+
+								<div style="display: flex; align-items: center; justify-content: space-between; padding: 4px 0; margin-top: 8px;">
+									<span class="input-label" style="margin-bottom: 0;">Smooth Curves (Bezier)</span>
+									<label class="toggle-switch">
+										<input
+											type="checkbox"
+											checked={config.smoothCurves !== false}
+											onchange={(e) => updateConfigField('smoothCurves', (e.target as HTMLInputElement).checked)}
+										/>
+										<span class="toggle-slider"></span>
+									</label>
+								</div>
 							{/if}
 							<div style="display: flex; align-items: center; justify-content: space-between; padding: 4px 0; border-top: 1px solid var(--color-border); padding-top: var(--space-3);">
 								<span class="input-label" style="margin-bottom: 0;">Inkscape EPS Export</span>

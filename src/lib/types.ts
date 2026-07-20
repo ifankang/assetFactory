@@ -22,6 +22,8 @@ export interface WorkflowConfig {
 	inkscapeEnabled?: boolean;
 	inkscapePath?: string;
 	colorLimit?: number;
+	turdsize?: number;
+	smoothCurves?: boolean;
 }
 
 /** Status of a single pipeline step */

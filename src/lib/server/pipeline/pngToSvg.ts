@@ -257,6 +257,9 @@ export async function convertToSvg(pngBuffer: Buffer, config?: WorkflowConfig, o
 
 		// 5. Trace using @vectrace/trace
 		const maxColors = config?.colorLimit || 8;
+		const turdsize = config?.turdsize !== undefined ? config.turdsize : 10; // Default to 10 for cleaner output
+		const smooth = config?.smoothCurves !== false; // Default to true for smooth lines
+
 		const traceParams = {
 			mode: 'QUANT_COLOR' as const,
 			invert: false,
@@ -266,9 +269,9 @@ export async function convertToSvg(pngBuffer: Buffer, config?: WorkflowConfig, o
 			quantizationColors: maxColors,
 			multiScanColors: maxColors,
 			multiScanStack: true,
-			multiScanSmooth: false,
+			multiScanSmooth: smooth,
 			multiScanRemoveBackground: true,
-			turdsize: 3,
+			turdsize: turdsize,
 			alphamax: 1.25,
 			opticurve: 1,
 			opttolerance: 0.2
