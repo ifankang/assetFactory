@@ -1,0 +1,29 @@
+{
+  "name": "@vectrace/cli",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "vectrace": "./dist/cli.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@vectrace/core": "workspace:^",
+    "@vectrace/loader": "workspace:^",
+    "@vectrace/trace": "workspace:^",
+    "@vectrace/export": "workspace:^"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0"
+  }
+}

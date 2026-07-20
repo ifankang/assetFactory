@@ -1,0 +1,38 @@
+{
+  "name": "@vectrace/loader",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./browser": {
+      "types": "./dist/browser.d.ts",
+      "import": "./dist/browser.js"
+    },
+    "./node": {
+      "types": "./dist/node.d.ts",
+      "import": "./dist/node.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@vectrace/core": "workspace:^",
+    "jpeg-js": "^0.4.4",
+    "pngjs": "^7.0.0"
+  },
+  "devDependencies": {
+    "@types/jpeg-js": "^0.3.7",
+    "@types/node": "^22.0.0",
+    "@types/pngjs": "^6.0.5"
+  },
+  "optionalDependencies": {
+    "sharp": "^0.33.0"
+  }
+}

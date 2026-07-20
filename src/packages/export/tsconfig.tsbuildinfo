@@ -1,0 +1,1 @@
+{"version":"7.0.2","root":["./src/index.ts","./src/pathBounds.ts","./src/svg.ts"],"packageJsons":["../core/package.json","./package.json"]}

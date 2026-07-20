@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "esModuleInterop": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "paths": {
+      "@vectrace/core": ["./src/packages/core/src/index.ts"],
+      "@vectrace/preprocess": ["./src/packages/preprocess/src/index.ts"],
+      "@vectrace/quantize": ["./src/packages/quantize/src/index.ts"],
+      "@vectrace/trace": ["./src/packages/trace/src/index.ts"],
+      "@vectrace/loader": ["./src/packages/loader/src/index.ts"],
+      "@vectrace/loader/*": ["./src/packages/loader/src/*"],
+      "@vectrace/export": ["./src/packages/export/src/index.ts"]
+    }
+  }
+}

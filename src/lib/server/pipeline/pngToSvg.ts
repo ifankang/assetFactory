@@ -190,8 +190,8 @@ export async function convertToSvg(pngBuffer: Buffer, config?: WorkflowConfig, o
 	let rawSvg: string;
 
 	if (config?.vectorizerEngine === 'potrace') {
-		const { buildPaletteSync, applyPaletteSync, utils } = await import('image-q');
-		const { default: potrace } = await import('potrace');
+		const { trace } = await import('@vectrace/trace');
+		const { pixelsToRgbMap } = await import('@vectrace/loader');
 
 		const width = 1024;
 		const height = 1024;
@@ -222,134 +222,55 @@ export async function convertToSvg(pngBuffer: Buffer, config?: WorkflowConfig, o
 
 		const repairedAlphaMask = await repairMask(rawAlphaMask, rawPixelData, width, height, sharp);
 
-		// 3. High-quality Color Quantization (Do not quantize transparent pixels)
-		// We sample points exclusively from the repaired foreground mask
-		const fgPixels: number[] = [];
+		// 3. Prepare clean pixels: replace background pixels (repairedAlphaMask <= 128) with white (255, 255, 255, 255)
+		const cleanPixelData = new Uint8ClampedArray(width * height * 4);
 		for (let i = 0; i < width * height; i++) {
+			const idx = i * 4;
 			if (repairedAlphaMask[i] > 128) {
-				fgPixels.push(
-					rawPixelData[i * 4],
-					rawPixelData[i * 4 + 1],
-					rawPixelData[i * 4 + 2],
-					rawPixelData[i * 4 + 3]
-				);
+				cleanPixelData[idx] = rawPixelData[idx];
+				cleanPixelData[idx + 1] = rawPixelData[idx + 1];
+				cleanPixelData[idx + 2] = rawPixelData[idx + 2];
+				cleanPixelData[idx + 3] = rawPixelData[idx + 3];
+			} else {
+				// Pure white background
+				cleanPixelData[idx] = 255;
+				cleanPixelData[idx + 1] = 255;
+				cleanPixelData[idx + 2] = 255;
+				cleanPixelData[idx + 3] = 255;
 			}
 		}
 
-		// Fallback if the mask is empty
-		const quantizeBuffer = fgPixels.length > 0 
-			? new Uint8Array(fgPixels) 
-			: new Uint8Array(rawPixelData);
+		// 4. Load RgbMap
+		const rgbMap = pixelsToRgbMap(width, height, cleanPixelData);
 
-		const inPointContainer = utils.PointContainer.fromUint8Array(
-			quantizeBuffer,
-			quantizeBuffer.length / 4,
-			1
-		);
-
+		// 5. Trace using @vectrace/trace
 		const maxColors = config?.colorLimit || 8;
-		const palette = buildPaletteSync([inPointContainer], { colors: maxColors });
+		const traceParams = {
+			mode: 'QUANT_COLOR' as const,
+			invert: false,
+			brightnessThreshold: 0.45,
+			brightnessFloor: 0.0,
+			cannyHighThreshold: 0.65,
+			quantizationColors: maxColors,
+			multiScanColors: maxColors,
+			multiScanStack: true,
+			multiScanSmooth: false,
+			multiScanRemoveBackground: true,
+			turdsize: 3,
+			alphamax: 1.25,
+			opticurve: 1,
+			opttolerance: 0.2
+		};
 
-		// Map original pixels to the generated palette
-		const fullOriginalContainer = utils.PointContainer.fromUint8Array(
-			new Uint8Array(rawPixelData),
-			width,
-			height
-		);
-		const resultContainer = applyPaletteSync(fullOriginalContainer, palette);
-		const resultPixels = resultContainer.toUint8Array();
+		const results = await trace(rgbMap, traceParams);
 
-		const paletteColors = palette.getPointContainer().getPointArray();
-		const layers = [];
+		// 6. Compose final SVG using original viewBox dimensions
+		const innerContents = results
+			.map((e) => `<path fill="${e.fill}" d="${e.paths}"/>`)
+			.join('\n');
 
-		// 4. Region Processing: Generate separate layers for each quantized color
-		for (let idx = 0; idx < paletteColors.length; idx++) {
-			const c = paletteColors[idx];
-			
-			// Skip transparent colors
-			if (c.a < 128) {
-				continue;
-			}
-
-			// Generate 1-channel binary mask: matching = 0 (black/ink), non-matching = 255 (white/background)
-			// Apply repaired foreground mask so background is kept white (255)
-			const maskBuffer = Buffer.alloc(width * height);
-			let matches = 0;
-			for (let i = 0; i < width * height; i++) {
-				const pr = resultPixels[i * 4];
-				const pg = resultPixels[i * 4 + 1];
-				const pb = resultPixels[i * 4 + 2];
-				const pa = resultPixels[i * 4 + 3];
-				const maskVal = repairedAlphaMask[i]; // Use repaired mask
-
-				if (pr === c.r && pg === c.g && pb === c.b && maskVal > 128) {
-					maskBuffer[i] = 0; // black (ink to trace)
-					matches++;
-				} else {
-					maskBuffer[i] = 255; // white (background)
-				}
-			}
-
-			if (matches > 0) {
-				layers.push({
-					color: c,
-					maskBuffer,
-					matches
-				});
-			}
-		}
-
-		// Sort layers from largest area to smallest (helps eliminate gaps and overlaps by stacking smaller layers on top)
-		layers.sort((a, b) => b.matches - a.matches);
-
-		const innerContents: string[] = [];
-
-		// 5. Vectorization: Trace each binary region using Potrace
-		for (const layer of layers) {
-			const c = layer.color;
-			const rHex = c.r.toString(16).padStart(2, '0');
-			const gHex = c.g.toString(16).padStart(2, '0');
-			const bHex = c.b.toString(16).padStart(2, '0');
-			const hexColor = `#${rHex}${gHex}${bHex}`;
-
-			try {
-				// Clean binary mask (remove tiny speckles and smooth wobbly edges)
-				const cleanedMask = await sharp(layer.maskBuffer, {
-					raw: { width, height, channels: 1 }
-				})
-				.median(5)     // Clear noise speckles
-				.blur(1.5)     // Soften edge steps to produce smooth curves
-				.threshold(128)
-				.png()
-				.toBuffer();
-
-				// Trace color mask using potrace with smooth curve parameters tuned close to Inkscape
-				const svgString = await new Promise<string>((resolve, reject) => {
-					potrace.trace(cleanedMask, {
-						color: hexColor,
-						turdSize: 3,         // Discard minor noise fragments
-						alphaMax: 1.25,      // Smoother curves and corners
-						optCurve: true,      // Enable curve optimization
-						optTolerance: 0.2    // High curve fitting accuracy
-					}, (err, svg) => {
-						if (err) return reject(err);
-						resolve(svg);
-					});
-				});
-
-				// Extract inner content inside the <svg> wrapper (like <g fill="#..."> <path ... /> </g>)
-				const innerContent = svgString.replace(/<\/?svg[^>]*>/gi, '').trim();
-				if (innerContent) {
-					innerContents.push(innerContent);
-				}
-			} catch (traceError) {
-				console.error(`[potrace] Failed to trace layer ${hexColor}:`, traceError);
-			}
-		}
-
-		// Compose final SVG using original viewBox dimensions
 		rawSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}">
-${innerContents.join('\n')}
+${innerContents}
 </svg>`;
 	} else {
 		// --- PREEXISTING PROCESSING FOR INKSCAPE AND VTRACER ---
