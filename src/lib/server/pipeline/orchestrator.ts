@@ -57,6 +57,73 @@ async function saveBuffer(dir: string, filename: string, buffer: Buffer): Promis
 }
 
 /**
+ * Crop the foreground and center both the cutout and original images.
+ */
+async function centerCell(
+	cutout: Buffer,
+	original: Buffer
+): Promise<{ centeredCutout: Buffer; centeredOriginal: Buffer }> {
+	const { default: sharp } = await import('sharp');
+	const origMeta = await sharp(original).metadata();
+	const targetW = origMeta.width || 341;
+	const targetH = origMeta.height || 341;
+
+	const { data: trimmedCutout, info } = await sharp(cutout)
+		.trim()
+		.png()
+		.toBuffer({ resolveWithObject: true });
+
+	const w = info.width;
+	const h = info.height;
+
+	if (!w || !h || info.trimOffsetLeft === undefined || info.trimOffsetTop === undefined) {
+		return { centeredCutout: cutout, centeredOriginal: original };
+	}
+
+	const left = -info.trimOffsetLeft;
+	const top = -info.trimOffsetTop;
+
+	const trimmedOriginal = await sharp(original)
+		.extract({
+			left,
+			top,
+			width: w,
+			height: h
+		})
+		.png()
+		.toBuffer();
+
+	const padLeft = Math.floor((targetW - w) / 2);
+	const padRight = targetW - w - padLeft;
+	const padTop = Math.floor((targetH - h) / 2);
+	const padBottom = targetH - h - padTop;
+
+	const centeredCutout = await sharp(trimmedCutout)
+		.extend({
+			top: padTop,
+			bottom: padBottom,
+			left: padLeft,
+			right: padRight,
+			background: { r: 0, g: 0, b: 0, alpha: 0 }
+		})
+		.png()
+		.toBuffer();
+
+	const centeredOriginal = await sharp(trimmedOriginal)
+		.extend({
+			top: padTop,
+			bottom: padBottom,
+			left: padLeft,
+			right: padRight,
+			background: { r: 255, g: 255, b: 255, alpha: 255 }
+		})
+		.png()
+		.toBuffer();
+
+	return { centeredCutout, centeredOriginal };
+}
+
+/**
  * Run the full asset-template pipeline.
  *
  * Sequence per prompt:
@@ -149,7 +216,9 @@ export async function runPipeline(
 			const bgStart = performance.now();
 
 			for (let i = 0; i < cells.length; i++) {
-				const noBg = await removeBackground(cells[i]);
+				const noBgRaw = await removeBackground(cells[i]);
+				const { centeredCutout: noBg, centeredOriginal } = await centerCell(noBgRaw, cells[i]);
+				cells[i] = centeredOriginal; // Update the cell in the cells array so it's perfectly centered!
 				noBgBuffers.push(noBg);
 				const p = await saveBuffer(promptDir, `nobg_${i}.png`, noBg);
 				noBgPaths.push(p);
